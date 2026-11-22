@@ -6,6 +6,7 @@ import "core:os"
 
 Quantifier :: enum {
 	Once,
+	Zero_Or_Once,
 }
 
 Literal :: struct {
@@ -31,18 +32,26 @@ is_match :: proc(pattern: []Atom, text: string) -> (matched: bool, ok: bool) {
 	for pat_idx < len(pattern) {
 		if text_idx >= len(text) do return false, true
 
-		switch unit in pattern[pat_idx].kind {
+		atom := pattern[pat_idx]
+		switch kind in atom.kind {
 		case Literal:
-			if unit.char != text[text_idx] {
-				if pat_idx == 0 do text_idx += 1
-				pat_idx = 0
-				continue
+			matched := kind.char == text[text_idx]
+			switch atom.quantifier {
+			case .Once:
+				if matched {
+					pat_idx += 1
+					text_idx += 1
+
+				} else {
+					if pat_idx == 0 do text_idx += 1
+					pat_idx = 0
+				}
+
+			case .Zero_Or_Once:
+				if matched do text_idx += 1
+				pat_idx += 1
 			}
-
 		}
-
-		pat_idx += 1
-		text_idx += 1
 	}
 
 	return true, true
@@ -69,8 +78,31 @@ compile :: proc(expr: string) -> ([dynamic]Atom, bool) {
 		defer i += 1
 
 		c := expr[i]
+
+		if c == '?' {
+			if len(pattern) == 0 {
+				fmt.eprintln(expr)
+				fmt.eprintfln("%*s ------ illegal quantifier", i + 1, "^")
+				fmt.eprintfln("Illegal quantifier '?'")
+				return nil, false
+			}
+
+			atom := &pattern[len(pattern) - 1]
+			if atom.quantifier != .Once {
+				fmt.eprintln(expr)
+				fmt.eprintfln("%*s ------ illegal quantifier", i + 1, "^")
+				fmt.eprintfln("Illegal quantifier '?'")
+				return nil, false
+			}
+
+			atom.quantifier = .Zero_Or_Once
+			continue
+		}
+
 		if !is_alnum(c) {
-			fmt.eprintfln("Invalid regex: unknown char '%c' at '%d'", c, i)
+			fmt.eprintln(expr)
+			fmt.eprintfln("%*s ------ unknown char", i + 1, "^")
+			fmt.eprintfln("Invalid regex: unknown char '%c'", c)
 			return nil, false
 		}
 
@@ -85,13 +117,14 @@ compile :: proc(expr: string) -> ([dynamic]Atom, bool) {
 }
 
 main :: proc() {
-	expr :: "abc"
-	texts :: [?]string{"abc", "Hello, aabc!", "aaBc"}
+	expr :: "ab?c"
+	texts :: [?]string{"abc", "Hello, aabc!", "aaBc", "ac"}
 
 	pattern, ok := compile(expr)
 	if !ok do os.exit(1)
 	defer delete(pattern)
 
+	fmt.println("pattern =", pattern[:])
 	for text in texts {
 		matched, ok := is_match(pattern[:], text)
 		if !ok do os.exit(1)
