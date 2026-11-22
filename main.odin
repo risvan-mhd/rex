@@ -4,39 +4,101 @@ import "core:fmt"
 import "core:os"
 
 
-match_regex :: proc(re, target: string) -> (matched: bool, ok: bool) {
-	if len(re) <= 0 {
-		fmt.eprintln("Invalid regex: an empty string is not a valid regex")
+Quantifier :: enum {
+	Once,
+}
+
+Literal :: struct {
+	char: u8,
+}
+
+Atom :: struct {
+	kind:       union {
+		Literal,
+	},
+	quantifier: Quantifier,
+}
+
+is_match :: proc(pattern: []Atom, text: string) -> (matched: bool, ok: bool) {
+	if len(pattern) <= 0 {
+		fmt.eprintln("Invalid regex: an empty array is not a valid expression")
 		return false, false
 	}
 
-	re_i := 0
-	target_i := 0
+	pat_idx := 0
+	text_idx := 0
 
-	for re_i < len(re) {
-		if target_i >= len(target) do return false, true
+	for pat_idx < len(pattern) {
+		if text_idx >= len(text) do return false, true
 
-		if re[re_i] != target[target_i] {
-			if re_i == 0 do target_i += 1
-			re_i = 0
-			continue
+		switch unit in pattern[pat_idx].kind {
+		case Literal:
+			if unit.char != text[text_idx] {
+				if pat_idx == 0 do text_idx += 1
+				pat_idx = 0
+				continue
+			}
+
 		}
 
-		re_i += 1
-		target_i += 1
+		pat_idx += 1
+		text_idx += 1
 	}
 
 	return true, true
 }
 
+is_alnum :: proc(c: u8) -> bool {
+	is_alpha := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+	is_num := (c >= '0' && c <= '9')
+
+	return is_alpha || is_num
+
+}
+
+compile :: proc(expr: string) -> ([dynamic]Atom, bool) {
+	if len(expr) <= 0 {
+		fmt.eprintln("Invalid regex: an empty string is not a valid regex")
+		return nil, false
+	}
+
+	pattern := make([dynamic]Atom)
+
+	i := 0
+	for i < len(expr) {
+		defer i += 1
+
+		c := expr[i]
+		if !is_alnum(c) {
+			fmt.eprintfln("Invalid regex: unknown char '%c' at '%d'", c, i)
+			return nil, false
+		}
+
+		atom := Atom {
+			kind       = Literal{c},
+			quantifier = .Once,
+		}
+		append(&pattern, atom)
+	}
+
+	return pattern, true
+}
+
 main :: proc() {
-	re := "abc"
-	target := "Hello, aabc!"
+	expr :: "abc"
+	texts :: [?]string{"abc", "Hello, aabc!", "aaBc"}
 
-	matched, ok := match_regex(re, target)
+	pattern, ok := compile(expr)
 	if !ok do os.exit(1)
+	defer delete(pattern)
 
-	fmt.println("re =", re)
-	fmt.println("target =", target)
-	fmt.println("matched =", matched)
+	for text in texts {
+		matched, ok := is_match(pattern[:], text)
+		if !ok do os.exit(1)
+
+		fmt.println("expr =", expr)
+		fmt.println("text =", text)
+		fmt.println("matched =", matched)
+		fmt.println()
+	}
 }
